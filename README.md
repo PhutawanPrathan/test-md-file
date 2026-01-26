@@ -238,5 +238,78 @@ This document outlines the step-by-step process for training the three core mode
 | **Text Recognition** | PP-OCR Rec | Cropped Text Line | String (Text) | Reads the actual characters.      |
 
 ```mermaid
+graph TD
+    %% Define Styles
+    classDef data fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#000
+    classDef tool fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,color:#000
+    classDef action fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#000
+    classDef model fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
 
+    %% --- PHASE 1 ---
+    subgraph Phase1 [Phase 1: YOLOv8 OBB]
+        direction TB
+        RawData(Raw Dataset):::data -->|Import| XAny
+        
+        subgraph LabelSetup [Labeling Setup]
+            direction LR
+            XAny(X-AnyLabeling):::tool
+            Server(Ubuntu Server SAM 3):::tool
+            Server <-->|Sync Auto Label| XAny
+        end
+        
+        XAny -->|Export| OBB_Txt(OBB Labels .txt):::data
+        OBB_Txt --> TrainOBB(Train YOLOv8 OBB):::action
+        TrainOBB --> GetModel1{Get Model}:::model
+        
+        %% Loop
+        GetModel1 -.->|Load Pre-train to Relabel| XAny
+        
+        %% Export
+        GetModel1 --> ExportONNX1(Export .onnx):::action
+        ExportONNX1 --> ExportBmodel1(Export .bmodel):::action
+    end
+
+    %% --- PHASE 2 ---
+    subgraph Phase2 [Phase 2: PP-OCR Rec]
+        direction TB
+        %% Link from Phase 1
+        GetModel1 -->|Crop & Warp| CroppedImg(Cropped Plate Images):::data
+        
+        CroppedImg --> PPOCR(PPOCRLabel):::tool
+        
+        subgraph Cleaning [Data Cleaning Strategy]
+            PPOCR --> CheckResult{Check Result}
+            CheckResult -->|x Read Error| FolderErr(Error Folder):::data
+            CheckResult -->|/ Read OK| FolderOK(Valid Folder):::data
+            FolderErr -.->|Relabel Priority| PPOCR
+        end
+        
+        FolderOK -->|Export| RecGT(rec_gt.txt, crop textline images.):::data
+        RecGT --> TrainRec(Train Rec Model):::action
+        TrainRec --> GetModel2{Get Model}:::model
+        
+        %% loop
+        GetModel2 -.->|Load Pre-train to Relabel| PPOCR
+        %% Export
+        GetModel2 --> ExportONNX2(Export .onnx):::action
+        ExportONNX2 --> ExportBmodel2(Export .bmodel):::action
+    end
+
+    %% --- PHASE 3 ---
+    subgraph Phase3 [Phase 3: PP-OCR Det]
+        direction TB
+        %% Link from Phase 2
+        CroppedImg -.->|Reuse Images| PPOCR_Det(PPOCRLabel):::tool
+        
+        PPOCR_Det -->|Label Box| DetGT(label.txt):::data
+        DetGT --> TrainDet(Train Det Model):::action
+        TrainDet --> GetModel3{Get Model}:::model
+
+        %%Loop
+        GetModel3 -.->|Load Pre-train to Relabel| PPOCR_Det
+        
+        %% Export
+        GetModel3 --> ExportONNX3(Export .onnx):::action
+        ExportONNX3 --> ExportBmodel3(Export .bmodel):::action
+    end
 ```
