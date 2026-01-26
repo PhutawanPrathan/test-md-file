@@ -41,6 +41,7 @@ This document outlines the step-by-step process for training the three core mode
    ```
    
    * create **data.yaml** file and set path in that file to locate datasets location, number of class, class name.
+   
    * data.yaml example.
      
      ```yaml
