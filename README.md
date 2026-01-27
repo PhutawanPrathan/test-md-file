@@ -8,7 +8,7 @@ This document outlines the step-by-step process for training the three core mode
 
 ---
 
-![workflow](d:/Downloads/mermaid-diagram-2026-01-27-174216.png)
+![workflow](asset/mermaid-diagram-2026-01-27-174216.png)
 
 ---
 
