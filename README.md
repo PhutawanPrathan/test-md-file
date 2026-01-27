@@ -8,6 +8,10 @@ This document outlines the step-by-step process for training the three core mode
 
 ---
 
+![workflow](d:/Downloads/mermaid-diagram-2026-01-27-174216.png)
+
+---
+
 ## 1. Plate Detection Model (YOLOv8 OBB)
 
 **Goal:** Detect and localize the license plate in the image with rotation (Oriented Bounding Box).
