@@ -248,96 +248,69 @@ graph TD
     classDef tool fill:#ffe0b2,stroke:#e65100,stroke-width:2px,color:#000
     classDef action fill:#e1bee7,stroke:#4a148c,stroke-width:2px,color:#000
     classDef model fill:#c8e6c9,stroke:#1b5e20,stroke-width:2px,color:#000
-    classDef decision fill:#fff9c4,stroke:#f57f17,stroke-width:2px,color:#000
 
-    %% === PHASE 1: YOLOv8 OBB ===
-    subgraph Phase1 ["🎯 Phase 1: License Plate Detection (YOLOv8 OBB)"]
+    %% --- PHASE 1 ---
+    subgraph Phase1 [Phase 1: YOLOv8 OBB]
         direction TB
+        RawData(Raw Dataset):::data -->|Import| XAny
 
-        RawData["📁 Raw Dataset<br/>(Original Images)"]:::data
-
-        subgraph LabelSetup1 ["Labeling Environment"]
-            XAny["🏷️ X-AnyLabeling<br/>(Annotation Tool)"]:::tool
-            Server["🖥️ Ubuntu Server<br/>(SAM 3 Model)"]:::tool
-            Server <-.->|Auto-labeling Support| XAny
-        end
-
-        RawData -->|Import| XAny
-        XAny -->|Export Annotations| OBB_Txt["📄 OBB Labels<br/>(.txt format)"]:::data
-        OBB_Txt -->|Training Data| TrainOBB["⚙️ Train YOLOv8-OBB<br/>(Oriented Bounding Box)"]:::action
-        TrainOBB --> ModelOBB["🤖 YOLOv8-OBB Model<br/>(.pt checkpoint)"]:::model
-
-        %% Iterative Loop
-        ModelOBB -.->|Load for Re-labeling| XAny
-
-        %% Export Pipeline
-        ModelOBB -->|Convert| ExportONNX1["📦 Export to ONNX<br/>(Intermediate format)"]:::action
-        ExportONNX1 -->|Compile| ExportBmodel1["🔧 Export to BModel<br/>(Deployment format)"]:::action
-        ExportBmodel1 --> Deploy1["✅ Deployed OBB Model"]:::model
-    end
-
-    %% === PHASE 2: PP-OCR Recognition ===
-    subgraph Phase2 ["🔤 Phase 2: Text Recognition (PP-OCR Rec)"]
-        direction TB
-
-        ModelOBB -->|Crop & Warp Plates| CroppedImg["🖼️ Cropped Plate Images<br/>(Aligned & Normalized)"]:::data
-
-        CroppedImg -->|Load| PPOCR["🏷️ PPOCRLabel<br/>(Text Annotation)"]:::tool
-
-        subgraph QualityControl ["Quality Control"]
+        subgraph LabelSetup [Labeling Setup]
             direction LR
-            CheckResult{"✓ OCR Quality<br/>Check"}:::decision
-            FolderErr["❌ Error Folder<br/>(Misread/Unclear)"]:::data
-            FolderOK["✅ Valid Folder<br/>(Correct Labels)"]:::data
-
-            CheckResult -->|Failed| FolderErr
-            CheckResult -->|Passed| FolderOK
-            FolderErr -.->|Priority Re-labeling| PPOCR
+            XAny(X-AnyLabeling):::tool
+            Server(Ubuntu Server SAM 3):::tool
+            Server <-->|Sync Auto Label| XAny
         end
 
-        PPOCR --> CheckResult
-        FolderOK -->|Export| RecGT["📄 rec_gt.txt<br/>(image_path\ttext_label)"]:::data
-        RecGT -->|Training Data| TrainRec["⚙️ Train PP-OCR Rec<br/>(Recognition Model)"]:::action
-        TrainRec --> ModelRec["🤖 PP-OCR Rec Model<br/>(.pdparams)"]:::model
+        XAny -->|Export| OBB_Txt(OBB Labels .txt):::data
+        OBB_Txt --> TrainOBB(Train YOLOv8 OBB):::action
+        TrainOBB --> GetModel1{Get Model}:::model
 
-        %% Iterative Loop
-        ModelRec -.->|Load for Re-labeling| PPOCR
+        %% Loop
+        GetModel1 -.->|Load Pre-train to Relabel| XAny
 
-        %% Export Pipeline
-        ModelRec -->|Convert| ExportONNX2["📦 Export to ONNX"]:::action
-        ExportONNX2 -->|Compile| ExportBmodel2["🔧 Export to BModel"]:::action
-        ExportBmodel2 --> Deploy2["✅ Deployed Rec Model"]:::model
+        %% Export
+        GetModel1 --> ExportONNX1(Export .onnx):::action
     end
 
-    %% === PHASE 3: PP-OCR Detection ===
-    subgraph Phase3 ["🔍 Phase 3: Character Detection (PP-OCR Det)"]
+    %% --- PHASE 2 ---
+    subgraph Phase2 [Phase 2: PP-OCR Rec]
         direction TB
+        %% Link from Phase 1
+        GetModel1 -->|Crop & Warp| CroppedImg(Cropped Plate Images):::data
 
-        CroppedImg -.->|Reuse Images| PPOCRDet["🏷️ PPOCRLabel<br/>(Character Box Annotation)"]:::tool
+        CroppedImg --> PPOCR(PPOCRLabel):::tool
 
-        PPOCRDet -->|Label Character Boxes| DetGT["📄 label.txt<br/>(Quad-point coordinates)"]:::data
-        DetGT -->|Training Data| TrainDet["⚙️ Train PP-OCR Det<br/>(Detection Model)"]:::action
-        TrainDet --> ModelDet["🤖 PP-OCR Det Model<br/>(.pdparams)"]:::model
+        subgraph Cleaning [Data Cleaning Strategy]
+            PPOCR --> CheckResult{Check Result}
+            CheckResult -->|x Read Error| FolderErr(Error Folder):::data
+            CheckResult -->|/ Read OK| FolderOK(Valid Folder):::data
+            FolderErr -.->|Relabel Priority| PPOCR
+        end
 
-        %% Iterative Loop
-        ModelDet -.->|Load for Re-labeling| PPOCRDet
+        FolderOK -->|Export| RecGT(rec_gt.txt, crop textline images.):::data
+        RecGT --> TrainRec(Train Rec Model):::action
+        TrainRec --> GetModel2{Get Model}:::model
 
-        %% Export Pipeline
-        ModelDet -->|Convert| ExportONNX3["📦 Export to ONNX"]:::action
-        ExportONNX3 -->|Compile| ExportBmodel3["🔧 Export to BModel"]:::action
-        ExportBmodel3 --> Deploy3["✅ Deployed Det Model"]:::model
+        %% loop
+        GetModel2 -.->|Load Pre-train to Relabel| PPOCR
+        %% Export
+        GetModel2 --> ExportONNX2(Export .onnx):::action
     end
 
-    %% === FINAL INTEGRATION ===
-    Deploy1 & Deploy2 & Deploy3 --> FinalPipeline["🎊 Complete OCR Pipeline<br/>(Detection → Recognition → Character Detection)"]:::model
+    %% --- PHASE 3 ---
+    subgraph Phase3 [Phase 3: PP-OCR Det]
+        direction TB
+        %% Link from Phase 2
+        CroppedImg -.->|Reuse Images| PPOCR_Det(PPOCRLabel):::tool
 
-    %% Add legend
-    subgraph Legend ["Legend"]
-        direction LR
-        L1["📁 Data"]:::data
-        L2["🏷️ Tool"]:::tool
-        L3["⚙️ Action"]:::action
-        L4["🤖 Model"]:::model
-        L5["✓ Decision"]:::decision
+        PPOCR_Det -->|Label Box| DetGT(label.txt):::data
+        DetGT --> TrainDet(Train Det Model):::action
+        TrainDet --> GetModel3{Get Model}:::model
+
+        %%Loop
+        GetModel3 -.->|Load Pre-train to Relabel| PPOCR_Det
+
+        %% Export
+        GetModel3 --> ExportONNX3(Export .onnx):::action
     end
 ```
